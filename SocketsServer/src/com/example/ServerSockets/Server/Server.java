@@ -3,6 +3,7 @@ package com.example.ServerSockets.Server;
 
 
 import game.classes.Game;
+import game.classes.Player;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -10,16 +11,18 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 
 public class Server {
 
     private ServerSocket serverSocket;
-    private ArrayList<ConnectionHandler> clients;
+    private HashMap<Player, ConnectionHandler> clients;
     private ServerManager serverManager;
 
     public Server(int port) throws IOException{
         serverSocket= new ServerSocket(port);
-        clients = new ArrayList<ConnectionHandler>();
+        clients = new HashMap<>();
         serverManager = new ServerManager(this);
     }
 
@@ -29,13 +32,13 @@ public class Server {
 
     public void stop(){
         serverManager.acceptingClients = false;
-        for (ConnectionHandler client :clients) {
+        for (ConnectionHandler client :clients.values()) {
             client.close();
         }
     }
 
     public void sendMessageAll(ConnectionHandler from, String message){
-        for (ConnectionHandler client:clients) {
+        for (ConnectionHandler client:clients.values()) {
             if (from != client){
                 client.sendMessageA(message);
             }
@@ -43,8 +46,8 @@ public class Server {
     }
 
     public void sendMessageWhisper(String from, String to, String message){
-        for (ConnectionHandler client: clients){
-            if (client.getClientInfo().getName().equals(to)){
+        for (ConnectionHandler client: clients.values()){
+            if (client.player.getName().equals(to)){
                 client.sendMessageA(from + " whispers to you: " + message);
             }
         }
@@ -63,10 +66,12 @@ public class Server {
     private class ServerManager extends Thread {
         //private ConnectionHandler[] threads;
         private Server server;
+        private Game game;
         private boolean acceptingClients = true;
 
         public ServerManager(Server server){
             this.server = server;
+            game = new Game(server);
         }
 
         @Override
@@ -78,9 +83,11 @@ public class Server {
 
                     Socket serviceSocket = serverSocket.accept();
 
+                    Player player = new Player("?");
                     System.out.println("Client found! Connecting...");
-                    ConnectionHandler handler = new ConnectionHandler(server, serviceSocket);
-                    server.clients.add(handler);
+                    ConnectionHandler handler = new ConnectionHandler(server, serviceSocket, player);
+                    server.clients.put(player, handler);
+
                     handler.start();
                 }
 
@@ -100,15 +107,12 @@ public class Server {
         private DataOutputStream out;
         private Server server;
         private boolean receivingMessages = true;
-        private ClientInfo clientInfo = new ClientInfo("?");
+        private Player player;
 
-        public ClientInfo getClientInfo() {
-            return clientInfo;
-        }
-
-        public ConnectionHandler(Server server, Socket socket){
+        public ConnectionHandler(Server server, Socket socket, Player player){
             this.serviceSocket = socket;
             this.server = server;
+            this.player = player;
         }
 
         public void HandleConnection(){
@@ -125,7 +129,7 @@ public class Server {
                     handleMessage(messageType, in);
                 }
             } catch (Exception e) {
-                System.out.println("Connection reset, closing connection with " + this.getClientInfo().getName());
+                System.out.println("Connection reset, closing connection with " + this.player.getName());
                 this.close();
             } finally {
 
@@ -138,19 +142,19 @@ public class Server {
 
             switch (messageType){
                 case 1: // SEND ALL
-                    message = "Message A from: " + clientInfo.getName() + ": " + in.readUTF();
+                    message = "Message A from: " + player.getName() + ": " + in.readUTF();
                     sendMessageAll(this, message);
                     break;
                 case 2: // SEND WHISPER
                     String to = in.readUTF();
                     String whisper = in.readUTF();
 
-                    sendMessageWhisper(clientInfo.getName(), to, whisper);
+                    sendMessageWhisper(player.getName(), to, whisper);
                     break;
                 case 3: // SET NAME
-                    String previousName = clientInfo.getName();
-                    clientInfo.setName(in.readUTF());
-                    System.out.println("Name set to: " + clientInfo.getName() + ", was " + previousName);
+                    String previousName = player.getName();
+                    player.setName(in.readUTF());
+                    System.out.println("Name set to: " + player.getName() + ", was " + previousName);
                     break;
                 case 4: // START GAME
                     //TODO
